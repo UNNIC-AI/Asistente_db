@@ -77,6 +77,7 @@ class User(Base):
     uploaded_documents = relationship("Document", back_populates="uploaded_by_user")
     granted_accesses = relationship("UserModelAccess", back_populates="granted_by_user", foreign_keys="[UserModelAccess.granted_by]")
     resolved_questions = relationship("UnresolvedQuestion", back_populates="resolved_by_user", foreign_keys="[UnresolvedQuestion.resolved_by]")
+    skills = relationship("UserSkill", back_populates="user", cascade="all, delete-orphan")
     
     def __repr__(self):
         return f"<User(id={self.id}, username='{self.username}', role='{self.role}')>"
@@ -104,6 +105,7 @@ class Model(Base):
     documents = relationship("Document", back_populates="model", cascade="all, delete-orphan")
     document_chunks = relationship("DocumentChunk", back_populates="model", cascade="all, delete-orphan")
     chat_threads = relationship("ChatThread", back_populates="model")
+    indexed_files = relationship("IndexedFile", back_populates="model", cascade="all, delete-orphan")
     
     def __repr__(self):
         return f"<Model(id={self.id}, model_id='{self.model_id}', name='{self.name}')>"
@@ -209,6 +211,7 @@ class DocumentChunk(Base):
     chunk_index = Column(Integer, nullable=False)
     faiss_vector_index = Column(Integer, index=True)
     embedding = Column(Vector(384), nullable=True)
+    file_key = Column(Text, nullable=True, index=True)
     document_type = Column(String(100))
     chunk_metadata = Column(JSONB)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
@@ -225,7 +228,34 @@ class DocumentChunk(Base):
 
 
 # ============================================
-# 7. CHAT_THREADS TABLE
+# 7. INDEXED_FILES TABLE
+# ============================================
+
+class IndexedFile(Base):
+    __tablename__ = "indexed_files"
+
+    id = Column(Integer, primary_key=True, index=True)
+    model_id = Column(Integer, ForeignKey("models.id", ondelete="CASCADE"), nullable=False, index=True)
+    file_key = Column(Text, nullable=False)
+    file_name = Column(Text)
+    content_hash = Column(Text)
+    indexed_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+    chunk_count = Column(Integer, default=0)
+    status = Column(String(20), default="indexed")
+
+    __table_args__ = (
+        UniqueConstraint("model_id", "file_key", name="uq_indexed_files_model_file"),
+    )
+
+    # Relationships
+    model = relationship("Model", back_populates="indexed_files")
+
+    def __repr__(self):
+        return f"<IndexedFile(id={self.id}, model_id={self.model_id}, file_key='{self.file_key}', status='{self.status}')>"
+
+
+# ============================================
+# 8. CHAT_THREADS TABLE
 # ============================================
 
 class ChatThread(Base):
@@ -251,7 +281,7 @@ class ChatThread(Base):
 
 
 # ============================================
-# 7. CHAT_MESSAGES TABLE
+# 9. CHAT_MESSAGES TABLE
 # ============================================
 
 class ChatMessage(Base):
@@ -278,7 +308,7 @@ class ChatMessage(Base):
 
 
 # ============================================
-# 8. UNRESOLVED_QUESTIONS TABLE
+# 10. UNRESOLVED_QUESTIONS TABLE
 # ============================================
 
 class UnresolvedQuestion(Base):
@@ -310,3 +340,30 @@ class UnresolvedQuestion(Base):
     
     def __repr__(self):
         return f"<UnresolvedQuestion(id={self.id}, status='{self.status}', user_id={self.user_id})>"
+
+
+# ============================================
+# 11. USER_SKILLS TABLE
+# ============================================
+
+class UserSkill(Base):
+    __tablename__ = "user_skills"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    keyword = Column(String(100), nullable=False)
+    explanation = Column(Text, nullable=False)
+    description = Column(Text, nullable=True)
+    always_apply = Column(Boolean, nullable=False, default=False, server_default="false")
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+    updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "keyword", name="uq_user_skill_keyword"),
+    )
+
+    # Relationships
+    user = relationship("User", back_populates="skills")
+
+    def __repr__(self):
+        return f"<UserSkill(id={self.id}, user_id={self.user_id}, keyword='{self.keyword}')>"
